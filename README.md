@@ -20,7 +20,7 @@ Then, in your build script, import and use the library:
 
 ```zig
 const assetpack = @import("assetpack");
-const assets_module = assetpack.pack(b, b.path("path/to/asset/dir"), .{});
+const assets_module = assetpack.pack(b, b.path("path/to/asset/dir"));
 exe.root_module.addImport("assets", assets_module);
 ```
 
@@ -75,6 +75,9 @@ There are several ways to solve this problem. Here's how `assetpack` compares:
 
 `assetpack` is currently very simple and somewhat limited.
 In future, I'd like to support some additional features:
+
+- Filename filtering, eg. ignore files with specific extensions, or those in `.gitignore`. 
+  A sensible default would be to check the containing package's `paths` field in its `build.zig.zon`.
 
 - Modifying files before they enter the asset index. For example running a shader compiler or an
   image converters. This would make it much easier to move an entire game development asset pipeline

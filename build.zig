@@ -16,10 +16,9 @@ pub fn build(b: *std.Build) void {
 pub fn pack(
     b: *std.Build,
     dir: std.Build.LazyPath,
-    options: std.Build.Step.WriteFile.Directory.Options,
 ) *std.Build.Module {
     const copy = b.addWriteFiles();
-    const copied_dir = copy.addCopyDirectory(dir, ".", options);
+    const copied_dir = copy.addCopyDirectory(dir, ".", .{});
 
     const dep = b.dependencyFromBuildZig(@This(), .{});
     const run = b.addRunArtifact(dep.artifact("assetpack"));
