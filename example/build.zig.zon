@@ -1,0 +1,9 @@
+.{
+    .name = .assetpack_example,
+    .fingerprint = 0x8060e015bd6f72cd,
+    .version = "0.1.0",
+    .paths = .{""},
+    .dependencies = .{
+        .assetpack = .{ .path = ".." },
+    },
+}

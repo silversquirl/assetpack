@@ -1,0 +1,11 @@
+.{
+    .name = .assetpack,
+    .fingerprint = 0xb0bf8455773630e4,
+    .version = "0.1.0",
+    .paths = .{
+        "README.md",
+        "LICENSE",
+        "build.zig",
+        "assetpack.zig",
+    },
+}
