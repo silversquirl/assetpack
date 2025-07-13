@@ -7,27 +7,27 @@ pub fn main() !void {
 
     var args = try std.process.argsWithAllocator(allocator);
     _ = args.skip();
-    const input_path = args.next() orelse usage();
-    const output_path = args.next() orelse usage();
+    const input_path = args.next() orelse usage("missing input path");
+    const output_dir_path = args.next() orelse usage("missing input path prefix");
+    const index_file_path = args.next() orelse usage("missing output path");
+    if (args.skip()) usage("too many arguments");
 
-    const output_filename = std.fs.path.basename(output_path);
-    const output_dir_path = std.fs.path.dirname(output_path) orelse ".";
+    var path_buf: std.ArrayListUnmanaged(u8) = .{};
+    defer path_buf.deinit(allocator);
 
     var stack: std.ArrayListUnmanaged(struct {
         iter: std.fs.Dir.Iterator,
         out: std.fs.Dir,
-        level: u32,
-        path: []const u8,
+        name_len: usize,
 
-        pub fn deinit(frame: *@This(), alloc: std.mem.Allocator) void {
+        pub fn deinit(frame: *@This()) void {
             frame.iter.dir.close();
             frame.out.close();
-            alloc.free(frame.path);
         }
     }) = .empty;
     defer {
         for (stack.items) |*frame| {
-            frame.deinit(allocator);
+            frame.deinit();
         }
         stack.deinit(allocator);
     }
@@ -39,24 +39,42 @@ pub fn main() !void {
         };
         errdefer in.close();
 
-        var out = std.fs.cwd().makeOpenPath(output_dir_path, .{}) catch |err| {
-            std.log.err("unable to create output directory '{s}'", .{output_dir_path});
+        var out = std.fs.cwd().openDir(output_dir_path, .{}) catch |err| {
+            std.log.err("unable to open output directory '{s}'", .{output_dir_path});
             return err;
         };
         errdefer out.close();
 
-        const path = try allocator.dupe(u8, "./");
-        errdefer allocator.free(path);
+        {
+            // Compute relative path
+            const path_prefix = try std.fs.path.relative(
+                allocator,
+                std.fs.path.dirname(index_file_path) orelse ".",
+                output_dir_path,
+            );
+            errdefer allocator.free(path_prefix);
+
+            // Ensure we don't escape the module root
+            if (std.mem.startsWith(u8, path_prefix, "../")) {
+                std.log.err("output directory not a subdirectory of output module root", .{});
+                return error.InvalidOutputDirectory;
+            }
+            std.debug.assert(std.mem.indexOf(u8, path_prefix, "/../") == null);
+
+            // Convert to posix
+            std.debug.assert(path_buf.capacity == 0);
+            path_buf = .fromOwnedSlice(path_prefix);
+            try path_buf.append(allocator, '/');
+        }
 
         try stack.append(allocator, .{
             .iter = in.iterateAssumeFirstIteration(),
             .out = out,
-            .level = 0,
-            .path = path,
+            .name_len = path_buf.items.len,
         });
     }
 
-    const outfile = try stack.getLast().out.createFile(output_filename, .{});
+    const outfile = try std.fs.cwd().createFile(index_file_path, .{});
     defer outfile.close();
     var out_writer_buf: [4096]u8 = undefined;
     var out_writer_impl = if (writergate)
@@ -72,18 +90,23 @@ pub fn main() !void {
     while (stack.items.len > 0) {
         const frame = &stack.items[stack.items.len - 1];
         const entry = try frame.iter.next() orelse {
-            if (frame.level > 0) {
+            if (stack.items.len > 1) {
+                // Close struct
+                const indent = (stack.items.len - 2) * 4;
                 if (writergate) {
-                    try out_writer.splatByteAll(' ', (frame.level - 1) * 4);
+                    try out_writer.splatByteAll(' ', indent);
                 } else {
-                    try out_writer.writeByteNTimes(' ', (frame.level - 1) * 4);
+                    try out_writer.writeByteNTimes(' ', indent);
                 }
                 try out_writer.writeAll("};\n");
             }
-            frame.deinit(allocator);
+            path_buf.items.len -= frame.name_len;
+            frame.deinit();
             stack.items.len -= 1;
             continue;
         };
+
+        const indent = (stack.items.len - 1) * 4;
 
         if (entry.kind == .directory) {
             var in = try frame.iter.dir.openDir(entry.name, .{ .iterate = true });
@@ -92,13 +115,13 @@ pub fn main() !void {
             var out = try frame.out.makeOpenPath(entry.name, .{});
             errdefer out.close();
 
-            const path = try std.mem.concat(allocator, u8, &.{ frame.path, entry.name, "/" });
-            errdefer allocator.free(path);
+            try path_buf.appendSlice(allocator, entry.name);
+            try path_buf.append(allocator, '/');
 
             if (writergate) {
-                try out_writer.splatByteAll(' ', frame.level * 4);
+                try out_writer.splatByteAll(' ', indent);
             } else {
-                try out_writer.writeByteNTimes(' ', frame.level * 4);
+                try out_writer.writeByteNTimes(' ', indent);
             }
 
             if (writergate) {
@@ -114,28 +137,27 @@ pub fn main() !void {
             try stack.append(allocator, .{
                 .iter = in.iterateAssumeFirstIteration(),
                 .out = out,
-                .level = frame.level + 1,
-                .path = path,
+                .name_len = entry.name.len + 1,
             });
         } else {
             try frame.iter.dir.copyFile(entry.name, frame.out, entry.name, .{});
 
             if (writergate) {
-                try out_writer.splatByteAll(' ', frame.level * 4);
+                try out_writer.splatByteAll(' ', indent);
             } else {
-                try out_writer.writeByteNTimes(' ', frame.level * 4);
+                try out_writer.writeByteNTimes(' ', indent);
             }
 
             if (writergate) {
                 try out_writer.print("pub const {f} = @embedFile(\"{f}{f}\");\n", .{
                     std.zig.fmtId(entry.name),
-                    std.zig.fmtString(frame.path),
+                    std.zig.fmtString(path_buf.items),
                     std.zig.fmtString(entry.name),
                 });
             } else {
                 try out_writer.print("pub const {} = @embedFile(\"{}{}\");\n", .{
                     std.zig.fmtId(entry.name),
-                    std.zig.fmtEscapes(frame.path),
+                    std.zig.fmtEscapes(path_buf.items),
                     std.zig.fmtEscapes(entry.name),
                 });
             }
@@ -149,8 +171,9 @@ pub fn main() !void {
     }
 }
 
-fn usage() noreturn {
+fn usage(err_msg: []const u8) noreturn {
     std.debug.print("Usage: assetpack INPUT_DIR OUTPUT_ZIG_FILE\n", .{});
+    std.log.err("{s}", .{err_msg});
     std.process.exit(1);
 }
 

@@ -18,11 +18,12 @@ pub fn pack(
     dir: std.Build.LazyPath,
 ) *std.Build.Module {
     const copy = b.addWriteFiles();
-    const copied_dir = copy.addCopyDirectory(dir, ".", .{});
+    const copied_dir = copy.addCopyDirectory(dir, "assets", .{});
 
     const dep = b.dependencyFromBuildZig(@This(), .{});
     const run = b.addRunArtifact(dep.artifact("assetpack"));
     run.addDirectoryArg(copied_dir);
+    _ = run.addOutputDirectoryArg("assets");
     const index_file = run.addOutputFileArg("_assetpack_index.zig");
     return b.createModule(.{ .root_source_file = index_file });
 }
