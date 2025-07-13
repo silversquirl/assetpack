@@ -13,10 +13,17 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 }
 
-pub fn pack(b: *std.Build, dir: std.Build.LazyPath) *std.Build.Module {
+pub fn pack(
+    b: *std.Build,
+    dir: std.Build.LazyPath,
+    options: std.Build.Step.WriteFile.Directory.Options,
+) *std.Build.Module {
+    const copy = b.addWriteFiles();
+    const copied_dir = copy.addCopyDirectory(dir, ".", options);
+
     const dep = b.dependencyFromBuildZig(@This(), .{});
     const run = b.addRunArtifact(dep.artifact("assetpack"));
-    run.addDirectoryArg(dir);
+    run.addDirectoryArg(copied_dir);
     const index_file = run.addOutputFileArg("_assetpack_index.zig");
     return b.createModule(.{ .root_source_file = index_file });
 }

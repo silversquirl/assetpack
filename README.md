@@ -20,7 +20,7 @@ Then, in your build script, import and use the library:
 
 ```zig
 const assetpack = @import("assetpack");
-const assets_module = assetpack.pack(b, b.path("path/to/asset/dir");
+const assets_module = assetpack.pack(b, b.path("path/to/asset/dir"), .{});
 exe.root_module.addImport("assets", assets_module);
 ```
 
