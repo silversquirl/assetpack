@@ -20,7 +20,7 @@ Then, in your build script, import and use the library:
 
 ```zig
 const assetpack = @import("assetpack");
-const assets_module = assetpack.pack(b, b.path("path/to/asset/dir"));
+const assets_module = assetpack.pack(b, b.path("path/to/asset/dir"), .{});
 exe.root_module.addImport("assets", assets_module);
 ```
 
@@ -30,6 +30,13 @@ importing it. Each directory is represented as a namespace, and each file is a c
 ```zig
 const assets = @import("assets");
 std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.foo.bar.@"baz.txt"});
+```
+
+There are also some helper functions to access files by a comptime-known path string. By default,
+these live under the `get` namespace, but this can be customized at build time.
+
+```zig
+std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.get.file("/foo/bar/baz.txt")});
 ```
 
 ## Alternatives

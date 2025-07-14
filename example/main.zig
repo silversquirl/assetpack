@@ -18,6 +18,12 @@ pub fn main() !void {
     try out.writeAll(".\n");
     var indent: std.BoundedArray(u8, 128) = .{};
     try writeTree(assets, &indent, out);
+
+    const path = "/this/is/a/deeply/nested/path/hi.json";
+    try out.print("accessing '{s}': ", .{path});
+    const content = assets.get.file(path);
+    try out.writeAll(content);
+
     if (writergate) {
         try out.flush();
     } else {
@@ -41,7 +47,20 @@ fn writeTree(tree: type, indent: *std.BoundedArray(u8, 128), out: Writer) !void 
     defer indent.len = indent_start;
     const this_indent = indent.buffer[indent_start..indent.len];
 
-    const decls = @typeInfo(tree).@"struct".decls;
+    const decls = comptime blk: {
+        var buf = @typeInfo(tree).@"struct".decls[0..].*;
+        var w: usize = 0;
+        for (&buf) |decl| {
+            if (std.mem.eql(u8, decl.name, "get")) {
+                // skip the getter namespace
+            } else {
+                buf[w] = decl;
+                w += 1;
+            }
+        }
+        break :blk buf[0..w];
+    };
+
     inline for (decls, 0..) |decl, i| {
         if (i < decls.len - 1) {
             @memcpy(this_indent, direct_indent);
