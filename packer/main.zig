@@ -6,6 +6,7 @@ pub fn main() !void {
     const allocator = debug_alloc.allocator();
 
     var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
     _ = args.skip();
     const input_path = args.next() orelse usage("missing input path");
     const output_dir_path = args.next() orelse usage("missing input path prefix");
