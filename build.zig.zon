@@ -6,6 +6,7 @@
         "README.md",
         "LICENSE",
         "build.zig",
-        "assetpack.zig",
+        "lib",
+        "packer",
     },
 }
