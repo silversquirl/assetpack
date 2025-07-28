@@ -25,18 +25,43 @@ exe.root_module.addImport("assets", assets_module);
 ```
 
 Once you've added the generated assets module to your Zig program, you can access the file data by
-importing it. Each directory is represented as a namespace, and each file is a constant string.
+importing it. There are two different methods of accessing the packed files: namesapce lookup,
+or the filesystem-style API.
+
+The namespace API is extremely simple and fast, and is the ideal choice for retrieving files based
+on a statically known path:
 
 ```zig
 const assets = @import("assets");
-std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.foo.bar.@"baz.txt"});
+std.log.info("content of foo/bar/baz.txt: {s}", .{assets.files.foo.bar.@"baz.txt"});
 ```
 
-There are also some helper functions to access files by a path string. By default, these live under
-the `get` namespace, but this can be customized at build time.
+However, in more dynamic situations, it may be useful to access files based on a comptime- or
+runtime-known path string. This can be achieved using the filesystem-style API, which is inspired by
+Zig's own `std.fs`. To access files using the filesystem-style API, you retrieve a `Dir` handle, and
+call one of the accessor functions, such as `file` to read file contents, `dir` to get a handle to
+a subdirectory, or `iterate` to create an iterator over the directory contents.
 
 ```zig
-std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.get.file("/foo/bar/baz.txt")});
+const assets = @import("assets");
+
+// Get file contents through `assets.root`, which is an `assets.Dir` pointing to the root directory
+std.log.info("content of foo/bar/baz.txt: {s}", .{try assets.root.file("foo/bar/baz.txt")});
+
+// Iterate the directory `foo` in the root directory
+var it = (try assets.dir("foo")).iterate();
+while (it.next()) |entry| {
+    switch (entry.data) {
+        .dir => |dir| {
+            // `dir` is also an `assets.Dir`! We can open files through it, or count its child entries
+            std.log.info("directory foo/{s} has {d} entries", .{entry.name, dir.children});
+        },
+        .file => |file| {
+            // `file` is a string containing the file's content
+            std.log.info("file foo/{s}: {s}", .{entry.name, file});
+        }
+    }
+}
 ```
 
 ## Alternatives
@@ -62,9 +87,12 @@ There are several ways to solve this problem. Here's how `assetpack` compares:
   "filesystem" with a unified API. Using this, or similar libraries, it is possible to pack an asset
   directory into a zip file and access it with the same API as you would use for regular files.
 
-  `assetpack` does not yet support this kind of API, but I am interested in the idea of adding
-  support for it. One major benefit of `assetpack` over PhysicsFS is that the files are packed into
-  the actual binary, rather than simply a zip file distributed next to the binary.
+  While `assetpack` has a filesystem-style API, it does not yet support an interface that matches
+  regular file access. However, I am interested in adding this, and hopeful that Zig's upcoming
+  `std.Io` interface may provide a way of achieving it.
+
+  One benefit of `assetpack` over PhysicsFS is that the files are packed into the actual binary,
+  rather than simply a zip file distributed with it.
 
 - A variant on the PhysicsFS approach is to pack assets into a zip file, and then expose that file
   as a module to be used with `@embedFile`. This has some unique advantages over both PhysicsFS and
@@ -74,6 +102,9 @@ There are several ways to solve this problem. Here's how `assetpack` compares:
   use at comptime, due to the complexity of zip decompression.
   There are also some performance issues with this approach, since DEFLATE decompression is
   relatively slow, and file lookup in zip files requires iteration over the entire index.
+
+  In future, I would like to add compression support to `assetpack`, which will make it strictly
+  better than this approach.
 
 [build_sandbox]: https://github.com/ziglang/zig/issues/14286
 [physfs]: https://icculus.org/physfs/
@@ -92,8 +123,8 @@ In future, I'd like to support some additional features:
 - [ ] Optional compression. This could be implemented using the file preprocessing system, but having
       it built-in is likely to result in a nicer API.
 
-- [ ] Filesystem-style API, similar to PhysicsFS. Ideally, this could integrate directly into Zig's
-      standard library APIs through a custom `std.Io` implementation.
+- [ ] Unified asset/filesystem API, similar to PhysicsFS. Ideally, this could integrate directly into
+      Zig's standard library APIs through a custom `std.Io` implementation.
 
 - [ ] Support for structured data formats such as JSON and ZON. I would like this to be able to provide
       both parsed representations and the raw byte data.
