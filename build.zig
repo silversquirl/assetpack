@@ -30,7 +30,12 @@ pub fn pack(
     run.addDirectoryArg(copied_dir);
     _ = run.addOutputDirectoryArg("assets");
     const index_file = run.addOutputFileArg("_assetpack_index.zig");
-    run.addArg(std.json.stringifyAlloc(b.allocator, opts, .{}) catch @panic("OOM"));
+
+    const jsonStringify = if (@hasDecl(std.json, "Stringify"))
+        std.json.Stringify.valueAlloc
+    else
+        std.json.stringifyAlloc;
+    run.addArg(jsonStringify(b.allocator, opts, .{}) catch @panic("OOM"));
 
     return b.createModule(.{
         .root_source_file = index_file,

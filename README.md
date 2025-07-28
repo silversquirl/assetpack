@@ -32,8 +32,8 @@ const assets = @import("assets");
 std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.foo.bar.@"baz.txt"});
 ```
 
-There are also some helper functions to access files by a comptime-known path string. By default,
-these live under the `get` namespace, but this can be customized at build time.
+There are also some helper functions to access files by a path string. By default, these live under
+the `get` namespace, but this can be customized at build time.
 
 ```zig
 std.log.debug("content of foo/bar/baz.txt: {s}", .{assets.get.file("/foo/bar/baz.txt")});
@@ -83,21 +83,20 @@ There are several ways to solve this problem. Here's how `assetpack` compares:
 `assetpack` is currently very simple and somewhat limited.
 In future, I'd like to support some additional features:
 
-- Filename filtering, eg. ignore files with specific extensions, or those in `.gitignore`. 
-  A sensible default would be to check the containing package's `paths` field in its `build.zig.zon`.
+- [ ] Filename filtering, eg. ignore files with specific extensions, or those in `.gitignore`. 
+      A sensible default would be to check the containing package's `paths` field in its `build.zig.zon`.
 
-- Modifying files before they enter the asset index. For example running a shader compiler or an
-  image converters. This would make it much easier to move an entire game development asset pipeline
-  into `build.zig`
+- [ ] Preprocessing files before they enter the asset index. For example compiling shaders or converting
+      images. This would make it much easier to move an entire game development asset pipeline into `build.zig`
 
-- Optional compression. This could be implemented using the file modification system, but having it
-  built-in is likely to result in a nicer API.
+- [ ] Optional compression. This could be implemented using the file preprocessing system, but having
+      it built-in is likely to result in a nicer API.
 
-- Filesystem-style API, similar to PhysicsFS. Ideally, this could integrate directly into Zig's
-  standard library APIs through a custom `std.Io` implementation.
+- [ ] Filesystem-style API, similar to PhysicsFS. Ideally, this could integrate directly into Zig's
+      standard library APIs through a custom `std.Io` implementation.
 
-- Support for structured data formats such as JSON and ZON. I would like this to be able to provide
-  both parsed representations and the raw byte data.
+- [ ] Support for structured data formats such as JSON and ZON. I would like this to be able to provide
+      both parsed representations and the raw byte data.
 
-  This can already be done by parsing the data at comptime, however implementing this in `assetpack`
-  directly could result in a nicer API and faster build times. 
+      This can already be done by parsing the data at comptime, however implementing this in `assetpack`
+      directly could result in a nicer API and faster build times. 

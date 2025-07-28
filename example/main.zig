@@ -15,13 +15,18 @@ pub fn main() !void {
     else
         stdout_writer.writer().any();
 
-    try out.writeAll(".\n");
+    try out.writeAll("/\n");
     var indent: std.BoundedArray(u8, 128) = .{};
-    try writeTree(assets, &indent, out);
+    try writeTree(assets.root, &indent, out);
+    if (writergate) {
+        try out.flush();
+    } else {
+        try stdout_writer.flush();
+    }
 
-    const path = "/this/is/a/deeply/nested/path/hi.json";
-    try out.print("accessing '{s}': ", .{path});
-    const content = assets.get.file(path);
+    const path = "this/is/a/deeply/nested/path/hi.json";
+    std.log.info("accessing '{s}': ", .{path});
+    const content = try assets.root.file(path);
     try out.writeAll(content);
 
     if (writergate) {
@@ -31,7 +36,7 @@ pub fn main() !void {
     }
 }
 
-fn writeTree(tree: type, indent: *std.BoundedArray(u8, 128), out: Writer) !void {
+fn writeTree(dir: assets.Dir, indent: *std.BoundedArray(u8, 128), out: Writer) !void {
     const direct_indent = "|- ";
     const last_direct_indent = "`- ";
     const nested_indent = "|  ";
@@ -47,45 +52,31 @@ fn writeTree(tree: type, indent: *std.BoundedArray(u8, 128), out: Writer) !void 
     defer indent.len = indent_start;
     const this_indent = indent.buffer[indent_start..indent.len];
 
-    const decls = comptime blk: {
-        var buf = @typeInfo(tree).@"struct".decls[0..].*;
-        var w: usize = 0;
-        for (&buf) |decl| {
-            if (std.mem.eql(u8, decl.name, "get")) {
-                // skip the getter namespace
-            } else {
-                buf[w] = decl;
-                w += 1;
-            }
-        }
-        break :blk buf[0..w];
-    };
-
-    inline for (decls, 0..) |decl, i| {
-        if (i < decls.len - 1) {
-            @memcpy(this_indent, direct_indent);
-        } else {
+    var it = dir.iterate();
+    while (it.next()) |entry| {
+        if (it.empty()) {
             @memcpy(this_indent, last_direct_indent);
+        } else {
+            @memcpy(this_indent, direct_indent);
         }
         try out.writeAll(indent.constSlice());
 
-        const child = @field(tree, decl.name);
-        switch (@TypeOf(child)) {
-            type => {
-                try out.print("{s}\n", .{decl.name});
+        switch (entry.data) {
+            .dir => |subdir| {
+                try out.print("{s}\n", .{entry.name});
 
-                if (i < decls.len - 1) {
-                    @memcpy(this_indent, nested_indent);
-                } else {
+                if (it.empty()) {
                     @memcpy(this_indent, last_nested_indent);
+                } else {
+                    @memcpy(this_indent, nested_indent);
                 }
 
-                try writeTree(child, indent, out);
+                try writeTree(subdir, indent, out);
             },
-            else => if (writergate) {
-                try out.print("{s}  '{f}'\n", .{ decl.name, std.zig.fmtChar(child) });
+            .file => |bytes| if (writergate) {
+                try out.print("{s}  \"{f}\"\n", .{ entry.name, std.zig.fmtString(bytes) });
             } else {
-                try out.print("{s}  '{'}'\n", .{ decl.name, std.zig.fmtEscapes(child) });
+                try out.print("{s}  \"{}\"\n", .{ entry.name, std.zig.fmtEscapes(bytes) });
             },
         }
     }

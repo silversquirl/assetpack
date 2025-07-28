@@ -1,59 +1,170 @@
-/// Retrieve an asset by comptime-known file path.
-pub fn getFile(
-    comptime assets: type,
-    comptime path: []const u8,
-) GetFileArrayType(assets, path) {
-    return comptime getFileSlice(assets, path)[0..];
-}
-pub fn GetFileArrayType(comptime assets: type, comptime path: []const u8) type {
-    const slice = getFileSlice(assets, path);
-    return *const [slice.len:0]u8;
-}
+pub const Dir = struct {
+    map: PathMap,
+    offset: usize,
+    children: usize,
 
-fn getFileSlice(comptime assets: type, comptime path: []const u8) [:0]const u8 {
-    comptime {
-        if (!std.mem.startsWith(u8, path, "/")) {
-            @compileError("Asset paths must be absolute, but '" ++ path ++ "' is relative");
+    /// Retrieve an asset by file path.
+    pub inline fn file(d: Dir, path: []const u8) error{ FileNotFound, IsDir }![:0]const u8 {
+        switch ((try d.entry(path)).data) {
+            .dir => return error.IsDir,
+            .file => |result| return result,
         }
-
-        var it = std.mem.tokenizeScalar(u8, path, '/');
-        var container: type = assets;
-        var component = it.next() orelse {
-            @compileError("Asset path '" ++ path ++ "' is a directory");
-        };
-        while (it.next()) |next_component| {
-            defer component = next_component;
-
-            if (!@hasDecl(container, component)) {
-                @compileError("Asset path '" ++ path ++ "' attempts to access directory '" ++ component ++ "' which does not exist");
-            }
-
-            const next_container = @field(container, component);
-            if (@TypeOf(next_container) != type) {
-                @compileError("Asset path '" ++ path ++ "' attempts to access file '" ++ component ++ "' as a directory");
-            }
-
-            container = next_container;
-        }
-
-        if (!@hasDecl(container, component)) {
-            @compileError("Asset path '" ++ path ++ "' does not exist");
-        }
-        const file = @field(container, component);
-        if (@TypeOf(file) == type) {
-            @compileError("Asset path '" ++ path ++ "' is a directory");
-        }
-
-        return file;
     }
-}
 
-pub fn Getters(comptime assets: type) type {
-    return struct {
-        pub fn file(comptime path: []const u8) GetFileArrayType(assets, path) {
-            return getFile(assets, path);
+    /// Get a subdirectory by path.
+    pub inline fn dir(d: Dir, path: []const u8) error{ FileNotFound, NotDir }!Dir {
+        switch ((try d.entry(path)).data) {
+            .dir => |result| return result,
+            .file => return error.NotDir,
+        }
+    }
+
+    pub inline fn entry(d: Dir, path: []const u8) error{FileNotFound}!Dir.Entry {
+        const range: PathMap.Range = .{
+            .start = d.offset,
+            .len = d.children,
+        };
+        const ent = if (isComptimeKnown(.{ d, path }))
+            comptime try d.map.getEntry(range, path)
+        else
+            try d.map.getEntry(range, path);
+        return ent.toDirEntry(d.map);
+    }
+
+    pub inline fn iterate(d: Dir) Iterator {
+        return .{
+            .map = d.map,
+            .index = d.offset,
+            .end = d.offset + d.children,
+        };
+    }
+
+    pub const Entry = struct {
+        name: []const u8,
+        data: union(enum) {
+            dir: Dir,
+            file: [:0]const u8,
+        },
+
+        pub const Kind = enum { file, dir };
+    };
+
+    pub const Iterator = struct {
+        map: PathMap,
+        index: usize,
+        end: usize,
+
+        /// Returns the number of remaining entries in the iterator.
+        pub fn count(it: @This()) usize {
+            return it.end - it.index;
+        }
+
+        pub fn empty(it: @This()) bool {
+            return it.index >= it.end;
+        }
+
+        pub fn next(it: *@This()) ?Dir.Entry {
+            const ent = it.peek() orelse return null;
+            it.index += 1;
+            return ent;
+        }
+
+        pub fn peek(it: *@This()) ?Dir.Entry {
+            if (it.empty()) return null;
+            return it.map.entries[it.index].toDirEntry(it.map);
         }
     };
+};
+
+inline fn isComptimeKnown(value: anytype) bool {
+    return @typeInfo(@TypeOf(.{value})).@"struct".fields[0].is_comptime;
 }
+inline fn comptimeOrNull(value: anytype) ?@TypeOf(value) {
+    return if (isComptimeKnown(value)) value else null;
+}
+
+const PathMap = struct {
+    entries: [*]const Entry,
+
+    const Range = struct { start: usize, len: usize };
+    const Entry = struct {
+        tagged_name: [*:0]const u8,
+        data: Data,
+        const Data = union {
+            file: [:0]const u8,
+            dir: Range,
+        };
+
+        fn toDirEntry(entry: Entry, map: PathMap) Dir.Entry {
+            return .{
+                .name = entry.name(),
+                .data = switch (entry.kind()) {
+                    .file => .{ .file = entry.data.file },
+                    .dir => .{ .dir = .{
+                        .map = map,
+                        .offset = entry.data.dir.start,
+                        .children = entry.data.dir.len,
+                    } },
+                },
+            };
+        }
+
+        fn kind(entry: Entry) Dir.Entry.Kind {
+            return @enumFromInt(entry.tagged_name[0]);
+        }
+        fn name(entry: Entry) []const u8 {
+            return std.mem.span(entry.tagged_name[1..]);
+        }
+
+        pub fn dir(comptime dir_name: [:0]const u8, offset: usize, children: usize) Entry {
+            comptime std.debug.assert(std.mem.indexOfScalar(u8, dir_name, '/') == null);
+            return .{
+                .tagged_name = .{@intFromEnum(Dir.Entry.Kind.dir)} ++ dir_name,
+                .data = .{ .dir = .{ .start = offset, .len = children } },
+            };
+        }
+
+        pub fn file(comptime file_name: [:0]const u8, bytes: [:0]const u8) Entry {
+            comptime std.debug.assert(std.mem.indexOfScalar(u8, file_name, '/') == null);
+            return .{
+                .tagged_name = .{@intFromEnum(Dir.Entry.Kind.file)} ++ file_name,
+                .data = .{ .file = bytes },
+            };
+        }
+    };
+
+    fn getEntry(map: PathMap, root_range: Range, path: []const u8) !Entry {
+        std.debug.assert(!std.mem.startsWith(u8, path, "/")); // path must be relative
+
+        var range = root_range;
+        var path_offset: usize = 0;
+        while (true) {
+            const end = if (std.mem.indexOfScalarPos(u8, path, path_offset, '/')) |sep| sep else path.len;
+            const index = range.start + (std.sort.binarySearch(
+                Entry,
+                map.entries[range.start..][0..range.len],
+                @as([]const u8, path[path_offset..end]),
+                searchCompare,
+            ) orelse return error.FileNotFound);
+
+            const entry = map.entries[index];
+            if (end >= path.len) {
+                return entry;
+            }
+
+            switch (entry.kind()) {
+                .dir => {
+                    range = entry.data.dir;
+                    path_offset = end + 1;
+                },
+                .file => return error.FileNotFound,
+            }
+        }
+    }
+
+    fn searchCompare(target: []const u8, entry: Entry) std.math.Order {
+        return std.mem.order(u8, target, entry.name());
+    }
+};
 
 const std = @import("std");
