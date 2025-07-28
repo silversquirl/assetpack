@@ -45,8 +45,6 @@ pub const Dir = struct {
             dir: Dir,
             file: [:0]const u8,
         },
-
-        pub const Kind = enum { file, dir };
     };
 
     pub const Iterator = struct {
@@ -94,6 +92,7 @@ const PathMap = struct {
             file: [:0]const u8,
             dir: Range,
         };
+        const Kind = enum { file, dir };
 
         fn toDirEntry(entry: Entry, map: PathMap) Dir.Entry {
             return .{
@@ -109,7 +108,7 @@ const PathMap = struct {
             };
         }
 
-        fn kind(entry: Entry) Dir.Entry.Kind {
+        fn kind(entry: Entry) Kind {
             return @enumFromInt(entry.tagged_name[0]);
         }
         fn name(entry: Entry) []const u8 {
@@ -119,7 +118,7 @@ const PathMap = struct {
         pub fn dir(comptime dir_name: [:0]const u8, offset: usize, children: usize) Entry {
             comptime std.debug.assert(std.mem.indexOfScalar(u8, dir_name, '/') == null);
             return .{
-                .tagged_name = .{@intFromEnum(Dir.Entry.Kind.dir)} ++ dir_name,
+                .tagged_name = .{@intFromEnum(Kind.dir)} ++ dir_name,
                 .data = .{ .dir = .{ .start = offset, .len = children } },
             };
         }
@@ -127,7 +126,7 @@ const PathMap = struct {
         pub fn file(comptime file_name: [:0]const u8, bytes: [:0]const u8) Entry {
             comptime std.debug.assert(std.mem.indexOfScalar(u8, file_name, '/') == null);
             return .{
-                .tagged_name = .{@intFromEnum(Dir.Entry.Kind.file)} ++ file_name,
+                .tagged_name = .{@intFromEnum(Kind.file)} ++ file_name,
                 .data = .{ .file = bytes },
             };
         }
